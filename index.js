@@ -38,13 +38,15 @@ const getPaginatedResults = async (fn) => {
  * @param {AWS.ECR} ECR
  * @param {string} repository
  * @param {string} tag
+ * @param {string|undefined} registryId
  * @returns {AWS.Request|AWS.AWSError|null} Results, Error or `null`.
  */
-const getFindings = async (ECR, repository, tag) => {
+const getFindings = async (ECR, repository, tag, registryId) => {
   return ECR.describeImageScanFindings({
     imageId: {
       imageTag: tag
     },
+    registryId: registryId,
     repositoryName: repository
   }).promise().catch(
     (err) => {
@@ -58,15 +60,17 @@ const getFindings = async (ECR, repository, tag) => {
  * @param {AWS.ECR} ECR
  * @param {string} repository
  * @param {string} tag
+ * @param {string|undefined} registryId
  * @returns {AWS.ECR.ImageScanFinding[]|AWS.AWSError|null} Results, Error or `null`.
  */
-const getAllFindings = async (ECR, repository, tag) => {
+const getAllFindings = async (ECR, repository, tag, registryId) => {
   return await getPaginatedResults(async (NextMarker) => {
     const findings = await ECR.describeImageScanFindings({
       imageId: {
         imageTag: tag
       },
       maxResults: 1000, // Valid range: 1-1000, default: 100
+      registryId: registryId,
       repositoryName: repository,
       nextToken: NextMarker
     }).promise().catch(
@@ -141,6 +145,7 @@ const main = async () => {
   const tag = core.getInput('tag', { required: true })
   const failThreshold = core.getInput('fail_threshold') || 'high'
   const ignoreList = parseIgnoreList(core.getInput('ignore_list'))
+  const registryId = core.getInput('registry_id')
 
   const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
   if (proxyUrl !== undefined) {
@@ -161,7 +166,7 @@ const main = async () => {
 
   core.debug('Checking for existing findings')
   let status = null
-  let findings = await getFindings(ECR, repository, tag, !!ignoreList.length)
+  let findings = await getFindings(ECR, repository, tag, registryId)
   if (findings) {
     status = findings.imageScanStatus.status
     console.log(`A scan for this image was already requested, the scan's status is ${status}`)
@@ -174,6 +179,7 @@ const main = async () => {
       imageId: {
         imageTag: tag
       },
+      registryId: registryId,
       repositoryName: repository
     }).promise()
     status = 'IN_PROGRESS'
@@ -187,7 +193,7 @@ const main = async () => {
       })
     }
     console.log('Polling ECR for image scan findings...')
-    findings = await getFindings(ECR, repository, tag)
+    findings = await getFindings(ECR, repository, tag, registryId)
     status = findings.imageScanStatus.status
     core.debug(`Scan status: ${status}`)
     firstPoll = false
@@ -198,7 +204,7 @@ const main = async () => {
     throw new Error(`Unhandled scan status "${status}". API response: ${JSON.stringify(findings)}`)
   }
 
-  const findingsList = !!ignoreList.length ? await getAllFindings(ECR, repository, tag) : [] // only fetch all findings if we have an ignore list
+  const findingsList = !!ignoreList.length ? await getAllFindings(ECR, repository, tag, registryId) : [] // only fetch all findings if we have an ignore list
   const ignoredFindings = findingsList.filter(({ name }) => ignoreList.includes(name))
 
   if (ignoreList.length !== ignoredFindings.length) {

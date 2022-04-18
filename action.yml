@@ -11,8 +11,13 @@ inputs:
     description: >
       Fail if any vulnerabilities equal to or over this severity level are detected. Valid values: critical, high, medium, low, informational.
     default: medium
+    required: false
   ignore_list:
     description: List of CVE IDs to ignore in the vulnerability findings.
+    required: false
+  registry_id:
+    description: The AWS account ID associated with the registry that contains the repository to scan.
+    required: false
 outputs:
   critical:
     description: Number of critical vulnerabilities detected.
